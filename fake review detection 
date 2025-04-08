@@ -1,1 +1,156 @@
-fake review detection 
+import pandas as pd
+import numpy as np
+import re
+import string
+import tkinter as tk
+from tkinter import messagebox, filedialog, ttk
+import matplotlib.pyplot as plt
+import joblib
+import os
+from PIL import Image, ImageTk, ImageFilter
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import make_pipeline
+from sklearn.metrics import accuracy_score, classification_report
+from nltk.corpus import stopwords
+from nltk.stem import WordNetLemmatizer
+import nltk
+
+nltk.download("stopwords")
+nltk.download("wordnet")
+
+# Preprocessing function
+def preprocess_text(text):
+    text = text.lower()
+    text = re.sub(f"[{string.punctuation}]", "", text)
+    words = text.split()
+    words = [WordNetLemmatizer().lemmatize(word) for word in words if word not in stopwords.words("english")]
+    return " ".join(words)
+
+# Load or train model
+MODEL_PATH = "fake_review_model.pkl"
+if os.path.exists(MODEL_PATH):
+    model = joblib.load(MODEL_PATH)
+else:
+    data = {"review": [
+        "This product is amazing! I love it.",
+        "Worst purchase ever. Do not buy!",
+        "Great quality and fast shipping. Highly recommend!",
+        "Absolutely terrible. Waste of money!",
+        "Fantastic service and great value for money.",
+        "Scam! This is the worst product I have ever used."
+    ], "label": [1, 0, 1, 0, 1, 0]}
+
+    df = pd.DataFrame(data)
+    df["review"] = df["review"].apply(preprocess_text)
+    X_train, X_test, y_train, y_test = train_test_split(df["review"], df["label"], test_size=0.2, random_state=42)
+    
+    model = make_pipeline(TfidfVectorizer(), LogisticRegression())
+    model.fit(X_train, y_train)
+    joblib.dump(model, MODEL_PATH)
+
+# GUI functions
+results_list = []
+
+def predict_review(review):
+    processed_review = preprocess_text(review)
+    prediction = model.predict([processed_review])[0]
+    result = "Real Review" if prediction == 1 else "Fake Review"
+    results_list.append(result)
+    return result
+
+def check_review():
+    review = entry.get()
+    if review.strip():
+        result = predict_review(review)
+        messagebox.showinfo("Prediction Result", f"The review is: {result}")
+    else:
+        messagebox.showwarning("Input Error", "Please enter a review before checking.")
+
+def save_results():
+    result_text = "\n".join(results_list)
+    file_path = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text files", "*.txt"), ("All Files", "*.*")])
+    if file_path:
+        with open(file_path, "w") as file:
+            file.write(result_text)
+        messagebox.showinfo("Saved", "Results saved successfully!")
+
+def clear_text():
+    entry.delete(0, tk.END)
+    results_list.clear()
+
+def show_chart():
+    real_count = results_list.count("Real Review")
+    fake_count = results_list.count("Fake Review")
+    if real_count == 0 and fake_count == 0:
+        messagebox.showwarning("No Data", "No predictions made yet!")
+        return
+    plt.figure(figsize=(5, 5))
+    plt.pie([real_count, fake_count], labels=["Real Reviews", "Fake Reviews"], autopct="%1.1f%%", colors=["green", "red"])
+    plt.title("Review Sentiment Distribution")
+    plt.show()
+
+def batch_check():
+    file_path = filedialog.askopenfilename(filetypes=[("Text files", "*.txt"), ("All Files", "*.*")])
+    if file_path:
+        with open(file_path, "r") as file:
+            reviews = file.readlines()
+        for review in reviews:
+            review = review.strip()
+            if review:
+                predict_review(review)
+        messagebox.showinfo("Batch Check", "Batch check completed!")
+
+def exit_app():
+    root.destroy()
+
+def about_app():
+    messagebox.showinfo("About", "Fake Review Detection App\nVersion 1.0\nDeveloped using Python & Tkinter")
+
+# GUI Setup
+root = tk.Tk()
+root.title("Fake Review Detection")
+root.geometry("600x450")
+
+# Load background image
+bg_path = "background.png"  # Ensure you have a background image
+if os.path.exists(bg_path):
+    bg_img = Image.open(bg_path)
+    bg_img = bg_img.resize((600, 450), Image.LANCZOS)
+    bg_photo = ImageTk.PhotoImage(bg_img)
+    bg_label = tk.Label(root, image=bg_photo)
+    bg_label.place(relwidth=1, relheight=1)
+
+# Load and display logo in the top-left corner
+logo_path = "logo.png"
+if os.path.exists(logo_path):
+    logo_img = Image.open(logo_path)
+    logo_img = logo_img.resize((50, 50), Image.LANCZOS)
+    logo_photo = ImageTk.PhotoImage(logo_img)
+    logo_label = tk.Label(root, image=logo_photo, bg="white")
+    logo_label.place(x=10, y=10)
+
+# Create blurred frame for inputs
+frame = tk.Frame(root, bg="white", bd=5)
+frame.place(relx=0.5, rely=0.5, anchor="center")
+
+frame_bg = Image.new("RGB", (300, 300), "white")
+frame_bg = frame_bg.filter(ImageFilter.GaussianBlur(radius=5))
+frame_bg_photo = ImageTk.PhotoImage(frame_bg)
+frame_bg_label = tk.Label(frame, image=frame_bg_photo)
+frame_bg_label.place(relwidth=1, relheight=1)
+
+tk.Label(frame, text="Enter Review:", bg="white", font=("Arial", 12, "bold")).pack(pady=5)
+entry = tk.Entry(frame, width=60)
+entry.pack(pady=5)
+
+tk.Button(frame, text="Check Review", command=check_review).pack(pady=5)
+tk.Button(frame, text="Batch Check", command=batch_check).pack(pady=5)
+tk.Button(frame, text="Visualize Sentiment", command=show_chart).pack(pady=5)
+tk.Button(frame, text="Save Results", command=save_results).pack(pady=5)
+tk.Button(frame, text="Clear", command=clear_text).pack(pady=5)
+tk.Button(frame, text="Exit", command=exit_app).pack(pady=5)
+tk.Button(frame, text="About", command=about_app).pack(pady=5)
+
+root.mainloop()
